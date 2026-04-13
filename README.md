@@ -23,14 +23,41 @@ curl -s -H "X-Vault-Token: $VAULT_TOKEN" \
   $VAULT_ADDR/v1/secret/metadata/path/to/secret | jq .data
 ```
 
-Every write operation creates a new version — there is no in-place update:
+### Every write creates a new version — there is no in-place update
 
-| Operation | Creates New Version? |
-|---|---|
-| `vault kv put` (create) | Yes |
-| `vault kv put` (overwrite) | Yes |
-| `vault kv patch` (add/modify field) | Yes |
-| Vault UI save | Yes |
+This is a fundamental design property of Vault KV v2 that directly affects migration. There is no way to modify a secret value without creating a new version. Every `put`, `patch`, or UI save increments the version counter, and each version adds a metadata entry that grows the total metadata size.
+
+**Demonstration** (captured from the lab Vault instance):
+
+```bash
+# Step 1: Create a secret
+$ vault kv put secret/demo/version-demo username=admin password=initial endpoint=https://api.example.com
+# version: 1
+
+# Step 2: Update the password (full overwrite)
+$ vault kv put secret/demo/version-demo username=admin password=rotated endpoint=https://api.example.com
+# version: 2
+
+# Step 3: Add a new field (partial update via patch)
+$ vault kv patch secret/demo/version-demo region=us-east-1
+# version: 3   ← Already at the migration threshold
+
+# Step 4: Modify one field (patch)
+$ vault kv patch secret/demo/version-demo password=changed-again
+# version: 4   ← Metadata now 1,231 bytes. Exceeds the 1,024-byte limit.
+```
+
+After 4 routine operations — a create, a password rotation, adding a field, and another password rotation — the secret has 4 versions and its metadata is 1,231 bytes, already over the 1,024-byte limit. There is no way to update a secret without incrementing the version count.
+
+| Operation | Creates New Version? | Example |
+|---|---|---|
+| `vault kv put` (create) | Yes (v1) | Initial secret creation |
+| `vault kv put` (overwrite) | Yes (v2, v3...) | Password rotation, value change |
+| `vault kv patch` (add field) | Yes (v2, v3...) | Adding a new key-value pair |
+| `vault kv patch` (modify field) | Yes (v2, v3...) | Changing an existing value |
+| Vault UI save | Yes (v2, v3...) | Any edit through the web interface |
+
+**Implication:** A secret that is created and goes through 3 routine updates (password rotations, field additions, etc.) has 4 versions and will exceed the metadata limit. Secrets that undergo regular rotation will hit this limit quickly.
 
 ## What the Metadata Looks Like
 

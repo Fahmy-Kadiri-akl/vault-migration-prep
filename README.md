@@ -126,7 +126,134 @@ done
 
 - Migrated metadata is visible in the Akeyless console under **General > Description** for each secret.
 - Check migration status: `akeyless gateway-get-migration --name <name> --gateway-url <url>`
-- Check gateway logs for per-secret errors: look for `item_metadata too long` in `/var/log/akeyless/akeyless-api-proxy-error.log`
+- Check gateway logs for per-secret errors (see below).
+
+### Identifying Failures in Akeyless Gateway Logs
+
+When a secret fails to migrate or sync due to metadata size, the migration reports a summary status without itemizing which secrets failed. The Akeyless console does not surface per-secret errors. The only reliable way to identify the root cause and determine exactly which secrets were affected is through the gateway logs.
+
+#### Why this matters
+
+The migration can report `"status": "Completed"` while a significant number of secrets silently failed. The `failed` count in the migration status tells you how many secrets were affected, but not which ones. Without the gateway logs, there is no way to determine whether failures are caused by metadata size, network issues, permissions, or something else.
+
+#### Where the logs are
+
+On the Akeyless Gateway, two log files are relevant:
+
+```
+/var/log/akeyless/akeyless-api-proxy-error.log    # Per-secret failure details
+/var/log/akeyless/akeyless-api-proxy-trace.log     # Duplicate of errors + informational messages
+```
+
+Note: Successful secret migrations do not produce per-secret log entries. Only failures are logged.
+
+#### How to access them
+
+**Kubernetes deployments:**
+
+```bash
+# Find the gateway pod (use the unified pod, not cache/ssh/web)
+kubectl get pods -n <namespace> -l app=akeyless-gateway
+
+# Search for metadata errors
+kubectl exec -n <namespace> <pod-name> -- \
+  grep 'item_metadata too long' /var/log/akeyless/akeyless-api-proxy-error.log
+
+# Also check rotated logs (errors rotate frequently under load)
+kubectl exec -n <namespace> <pod-name> -- \
+  grep 'item_metadata too long' /var/log/akeyless/akeyless-api-proxy-error.log.1
+
+# For compressed rotated logs
+kubectl exec -n <namespace> <pod-name> -- \
+  zgrep 'item_metadata too long' /var/log/akeyless/akeyless-api-proxy-error.log.2.gz
+```
+
+**Docker / VM deployments:**
+
+```bash
+grep 'item_metadata too long' /var/log/akeyless/akeyless-api-proxy-error.log
+```
+
+#### What the errors look like
+
+There are two error patterns. **Initial creation failure** occurs when the secret does not yet exist in Akeyless:
+
+```
+ERROR: failed to create secret, name=/Migration-Target/secret/path/to/secret,
+  error=Desc: Failed to create item. Status 400 Bad Request, Error: InvalidParam.
+  Message: account id: acc-xxxxxxxxxx, access id: p-xxxxxxxxxx.
+  item_metadata too long. maximum length is 1024
+```
+
+**Sync/update failure** occurs when the secret already exists in Akeyless but an updated version exceeds the limit:
+
+```
+ERROR: failed to create new version of secret
+  '/Migration-Target/secret/path/to/secret':
+  Desc: Failed to update item. Status 400 Bad Request, Error: InvalidParam.
+  Message: account id: acc-xxxxxxxxxx, access id: p-xxxxxxxxxx.
+  item_metadata too long. maximum length is 1024
+```
+
+Both patterns share the same root cause: the Vault metadata serialized to JSON exceeds the 1,024-byte `item_metadata` field limit. The trace log (`akeyless-api-proxy-trace.log`) contains the same errors, sometimes logged at `INFO` level instead of `ERROR`.
+
+#### How to identify which secrets failed
+
+Extract unique secret paths from the error log:
+
+```bash
+# List all secrets that failed due to metadata size
+kubectl exec -n <namespace> <pod-name> -- \
+  grep 'item_metadata too long' /var/log/akeyless/akeyless-api-proxy-error.log \
+  | grep -oP "name=[^,]+|secret '[^']+'" | sort -u
+
+# Count total errors (a single secret may produce multiple errors across retries)
+kubectl exec -n <namespace> <pod-name> -- \
+  grep -c 'item_metadata too long' /var/log/akeyless/akeyless-api-proxy-error.log
+```
+
+#### Correlating with migration status
+
+The Akeyless CLI provides a summary of migration progress:
+
+```bash
+akeyless gateway-get-migration --name <migration-name> --gateway-url <gateway-url>
+```
+
+The response includes counts but does not identify individual secrets:
+
+```json
+{
+  "migration_items": {
+    "total": 150,
+    "migrated": 45,
+    "skipped": 5,
+    "failed": 100
+  },
+  "last_status_message": "Completed"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `total` | Number of secrets the migration attempted to process |
+| `migrated` | Secrets successfully created or updated in Akeyless |
+| `skipped` | Secrets that already existed and were unchanged |
+| `failed` | Secrets that could not be migrated (no details on which ones or why) |
+| `last_status_message` | Overall status; `Completed` does not mean all secrets succeeded |
+
+The `failed` count confirms something went wrong, but only the gateway error logs reveal which secrets failed and why. Cross-reference the secret paths from the error log with the `failed` count to confirm that metadata size is the root cause.
+
+#### Workflow: diagnosing a failed migration
+
+```
+1. Check status    ->  akeyless gateway-get-migration --name <name> --gateway-url <url>
+2. Note failures   ->  If "failed" > 0, check the gateway logs
+3. Extract paths   ->  grep 'item_metadata too long' on the error log
+4. Cross-reference ->  Compare failed secret paths with Vault metadata sizes
+5. Remediate       ->  Use scan.sh to trim version history on the affected secrets
+6. Re-migrate      ->  Re-run or wait for the next sync cycle
+```
 
 ## Assessment Tool
 

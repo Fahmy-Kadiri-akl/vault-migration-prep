@@ -1,0 +1,28 @@
+{
+  "cas_required": false,
+  "created_time": "2026-04-13T17:41:36.23375086Z",
+  "current_version": 1,
+  "custom_metadata": null,
+  "delete_version_after": "0s",
+  "last_updated_by": {
+    "actor": "token",
+    "client_id": "hmac-sha256:abc123...",
+    "operation": "create"
+  },
+  "max_versions": 0,
+  "oldest_version": 0,
+  "updated_time": "2026-04-13T17:41:36.23375086Z",
+  "versions": {
+    "1": {
+      "created_by": {
+        "actor": "token",
+        "client_id": "hmac-sha256:abc123...",
+        "operation": "create"
+      },
+      "created_time": "2026-04-13T17:41:36.23375086Z",
+      "deleted_by": null,
+      "deletion_time": "",
+      "destroyed": false
+    }
+  }
+}

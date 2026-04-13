@@ -1,0 +1,50 @@
+{
+  "cas_required": false,
+  "created_time": "2026-04-13T17:41:36.297807954Z",
+  "current_version": 3,
+  "custom_metadata": null,
+  "delete_version_after": "0s",
+  "last_updated_by": {
+    "actor": "token",
+    "client_id": "hmac-sha256:abc123...",
+    "operation": "update"
+  },
+  "max_versions": 0,
+  "oldest_version": 0,
+  "updated_time": "2026-04-13T17:41:36.429972489Z",
+  "versions": {
+    "1": {
+      "created_by": {
+        "actor": "token",
+        "client_id": "hmac-sha256:abc123...",
+        "operation": "create"
+      },
+      "created_time": "2026-04-13T17:41:36.297807954Z",
+      "deleted_by": null,
+      "deletion_time": "",
+      "destroyed": false
+    },
+    "2": {
+      "created_by": {
+        "actor": "token",
+        "client_id": "hmac-sha256:abc123...",
+        "operation": "update"
+      },
+      "created_time": "2026-04-13T17:41:36.363521616Z",
+      "deleted_by": null,
+      "deletion_time": "",
+      "destroyed": false
+    },
+    "3": {
+      "created_by": {
+        "actor": "token",
+        "client_id": "hmac-sha256:abc123...",
+        "operation": "update"
+      },
+      "created_time": "2026-04-13T17:41:36.429972489Z",
+      "deleted_by": null,
+      "deletion_time": "",
+      "destroyed": false
+    }
+  }
+}

@@ -1,0 +1,3 @@
+vault-migration-backup-*/
+*.csv
+.env
